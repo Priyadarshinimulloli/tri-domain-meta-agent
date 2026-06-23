@@ -1,13 +1,11 @@
 import re
 
-
 BLOCKED_KEYWORDS = [
     # Violence
     "hurt", "kill", "harm", "attack", "weapon", "bomb", "poison",
     # Illegal financial
     "money laundering", "tax evasion", "insider trading",
     "fake invoice", "bribe", "black money",
-  
     # Fraud
     "fake resume", "fake certificate", "fake degree",
     "fake my resume", "fake the resume", "falsify resume",
@@ -24,26 +22,35 @@ SENSITIVE_TOPICS = [
     "burnout", "overwhelmed", "hopeless"
 ]
 
+# ── Single source of truth for domain keywords ────────────────
+# Used by BOTH check_relevance() and detect_intent()
 DOMAIN_KEYWORDS = {
     "career": [
         "job", "work", "career", "skill", "resume", "cv",
         "interview", "promotion", "switch", "role", "hire",
         "scientist", "developer", "engineer", "analyst",
         "learn", "course", "salary", "linkedin", "data science",
-        "placement", "internship", "fresher", "experience"
+        "placement", "internship", "fresher", "experience",
+        "want to become", "want to be", "become a", "become an",
+        "looking for a job", "switch careers", "change career",
+        "career advice", "career growth", "job advice"
     ],
     "health": [
         "health", "weight", "bmi", "fitness", "exercise",
         "diet", "sick", "doctor", "sleep", "tired", "gym",
-        "calories", "overweight", "fat", "muscle", "mental",
+        "calories", "overweight", "fat", "muscle", "mental", "stress",
         "eat", "food", "nutrition", "lose weight", "gain weight",
-        "workout", "stress", "anxiety", "mood"
+        "workout", "anxiety", "mood", "wellness"
     ],
     "finance": [
         "money", "saving", "invest", "debt", "loan", "budget",
         "expense", "income", "tax", "emi", "rent", "insurance",
         "sip", "ppf", "stock", "mutual fund", "earning",
-        "spend", "finance", "bank", "credit", "debit", "salary"
+        "spend", "finance", "bank", "credit", "debit",
+        "financial", "stability", "wealth", "financial stability",
+        "retirement", "retire", "pension", "corpus",
+        "save for", "how much should i save", "savings goal",
+        "financial goal", "emergency fund", "net worth"
     ]
 }
 
@@ -94,11 +101,11 @@ def has_blocked_keyword(query: str, keyword: str) -> bool:
     """
     Match blocked keywords safely:
     - multi-word phrase: substring match
-    - single word: whole-word regex match (prevents false positives like kill in skills)
+    - single word: whole-word regex match
+      (prevents false positives like 'kill' in 'skills')
     """
     if " " in keyword:
         return keyword in query
-
     pattern = rf"\b{re.escape(keyword)}\b"
     return re.search(pattern, query) is not None
 
@@ -147,19 +154,22 @@ def check_relevance(query: str) -> dict:
     """
     Checks if query is related to Career, Health, or Finance.
     Blocks completely off-topic queries.
+    Uses DOMAIN_KEYWORDS — single source of truth.
     """
     query_lower = normalize_query(query)
-    matched     = []
+    matched = []
 
     for domain, keywords in DOMAIN_KEYWORDS.items():
         if any(kw in query_lower for kw in keywords):
             matched.append(domain)
 
-    # Make career queries more forgiving when the user expresses intent to
-    # become or switch into a role, even if the wording is short or informal.
-    has_career_intent = any(phrase in query_lower for phrase in CAREER_INTENT_PHRASES)
-    has_career_role = any(role in query_lower for role in CAREER_ROLE_KEYWORDS)
-
+    # Extra career intent check for indirect phrasing
+    has_career_intent = any(
+        phrase in query_lower for phrase in CAREER_INTENT_PHRASES
+    )
+    has_career_role = any(
+        role in query_lower for role in CAREER_ROLE_KEYWORDS
+    )
     if not matched and has_career_intent and has_career_role:
         matched.append("career")
 
