@@ -9,8 +9,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # ── PostgreSQL ──────────────────────────────────────────────
-    DATABASE_URL: str = "postgresql://postgres:postgres@localhost:5432/tridomain"
+    # ── Database ────────────────────────────────────────────────
+    DATABASE_URL: str = "sqlite:///./tridomain.db"
 
     # ── JWT ─────────────────────────────────────────────────────
     JWT_SECRET_KEY: str = "change-this-to-a-long-random-secret"
