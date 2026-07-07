@@ -7,7 +7,11 @@ import os
 import pickle
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
+
+try:
+    from sentence_transformers import SentenceTransformer
+except ImportError:  # pragma: no cover - depends on environment
+    SentenceTransformer = None
 
 IDX_PATH  = os.path.join(os.path.dirname(__file__), "tridomain_index.faiss")
 META_PATH = os.path.join(os.path.dirname(__file__), "tridomain_meta.pkl")
@@ -21,6 +25,10 @@ _meta  = None
 def _load():
     global _model, _index, _meta
     if _model is None:
+        if SentenceTransformer is None:
+            raise ImportError(
+                "sentence-transformers is not installed. Install it to enable RAG retrieval."
+            )
         print("[RAG] Loading retriever model...")
         _model = SentenceTransformer(MODEL_NAME)
     if _index is None:
