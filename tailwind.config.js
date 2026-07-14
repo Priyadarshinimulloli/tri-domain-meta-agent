@@ -1,6 +1,7 @@
 /** @type {import('tailwindcss').Config} */
-export default {
-  darkMode: ['class'],
+import tailwindcssAnimate from 'tailwindcss-animate'
+
+export default {  darkMode: ['class'],
   content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
   theme: {
     extend: {
@@ -93,7 +94,7 @@ export default {
         shimmer: {
           '100%': { transform: 'translateX(100%)' },
         },
-        pulse-soft: {
+        'pulse-soft': {
           '0%, 100%': { opacity: '1' },
           '50%': { opacity: '0.5' },
         },
@@ -106,5 +107,5 @@ export default {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [tailwindcssAnimate],
 }

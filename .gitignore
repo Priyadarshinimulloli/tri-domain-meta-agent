@@ -24,3 +24,4 @@ tridomain.db
 # Virtual environments
 venv/
 .venv/
+node_modules/

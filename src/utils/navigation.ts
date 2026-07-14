@@ -1,13 +1,10 @@
 import {
   Activity,
-  BarChart3,
   Brain,
   Briefcase,
-  Clock,
   Heart,
   History,
   LayoutDashboard,
-  LogOut,
   MessageSquare,
   Settings,
   User,

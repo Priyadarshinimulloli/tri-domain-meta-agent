@@ -1,8 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { User } from '@/types'
 import { authService } from '@/services'
-import { STORAGE_KEYS } from '@/utils/constants'
-
 interface AuthContextType {
   user: User | null
   isAuthenticated: boolean
