@@ -51,7 +51,7 @@ const profileSchema = z.object({
 type ProfileForm = z.infer<typeof profileSchema>
 
 export function ProfilePage() {
-  const { user } = useAuth()
+  const { user, setUser } = useAuth()
   const { t } = useLanguage()
   const { data: profile, isLoading } = useProfile()
   const updateProfile = useUpdateProfile()
@@ -107,24 +107,36 @@ export function ProfilePage() {
     }
   }
 
-  const handleAvatarUpload = (event: ChangeEvent<HTMLInputElement>) => {
+  const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
 
     const reader = new FileReader()
-    reader.onloadend = () => {
+    reader.onloadend = async () => {
       const url = reader.result as string
-      authService.saveAvatar(url)
-      setAvatarUrl(url)
-      toast.success(t('avatarUploaded'))
+      try {
+        const updatedUser = await authService.uploadAvatar(url)
+        authService.saveUser(updatedUser)
+        setUser(updatedUser)
+        setAvatarUrl(updatedUser.avatar_url || null)
+        toast.success(t('avatarUploaded'))
+      } catch (err) {
+        toast.error(getErrorMessage(err))
+      }
     }
     reader.readAsDataURL(file)
   }
 
-  const handleAvatarRemove = () => {
-    authService.clearAvatar()
-    setAvatarUrl(null)
-    toast.success(t('avatarDeleted'))
+  const handleAvatarRemove = async () => {
+    try {
+      const updatedUser = await authService.uploadAvatar('')
+      authService.saveUser(updatedUser)
+      setUser(updatedUser)
+      setAvatarUrl(null)
+      toast.success(t('avatarDeleted'))
+    } catch (err) {
+      toast.error(getErrorMessage(err))
+    }
   }
 
   const initials = user?.name?.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2) || 'U'

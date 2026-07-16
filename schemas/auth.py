@@ -33,6 +33,7 @@ class AvatarUploadRequest(BaseModel):
 
 
 class TwoFactorRequest(BaseModel):
+    enabled: bool
     current_password: str | None = None
 
 
