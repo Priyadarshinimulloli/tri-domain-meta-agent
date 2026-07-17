@@ -1,27 +1,32 @@
 import path from 'path'
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 
-export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      '@': path.resolve(__dirname, './src'),
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  const backendTarget = (env.VITE_API_URL || 'http://127.0.0.1:8003').replace(/\/$/, '')
+
+  return {
+    plugins: [react()],
+    resolve: {
+      alias: {
+        '@': path.resolve(__dirname, './src'),
+      },
     },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      '/auth': 'http://127.0.0.1:8000',
-      '/profile': 'http://127.0.0.1:8000',
-      '/memory': 'http://127.0.0.1:8000',
-      '/chat': 'http://127.0.0.1:8000',
-      '/reports': 'http://127.0.0.1:8000',
-      '/query': 'http://127.0.0.1:8000',
-      '/query-langchain': 'http://127.0.0.1:8000',
-      '/domains': 'http://127.0.0.1:8000',
-      '/health-check': 'http://127.0.0.1:8000',
-      '/api-status': 'http://127.0.0.1:8000',
+    server: {
+      port: 5173,
+      proxy: {
+        '/auth': backendTarget,
+        '/profile': backendTarget,
+        '/memory': backendTarget,
+        '/chat': backendTarget,
+        '/reports': backendTarget,
+        '/query': backendTarget,
+        '/query-langchain': backendTarget,
+        '/domains': backendTarget,
+        '/health-check': backendTarget,
+        '/api-status': backendTarget,
+      },
     },
-  },
+  }
 })
