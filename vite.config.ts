@@ -21,6 +21,7 @@ export default defineConfig(({ mode }) => {
         '/memory': backendTarget,
         '/chat': backendTarget,
         '/reports': backendTarget,
+        '/files': backendTarget,
         '/query': backendTarget,
         '/query-langchain': backendTarget,
         '/domains': backendTarget,
