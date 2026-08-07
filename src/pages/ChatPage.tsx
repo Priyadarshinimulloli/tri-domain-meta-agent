@@ -255,10 +255,22 @@ export function ChatPage() {
     }
   }
 
-  const handleNewChat = () => {
+const handleNewChat = () => {
     setMessages([])
     setConversationId(null)
     setComparison(null)
+  }
+
+  // Switching the domain must start a fresh conversation so the new domain's
+  // answers are stored/labeled correctly instead of being reattached to the
+  // previous (e.g. health) conversation.
+  const handleDomainChange = (value: string) => {
+    setDomain(value)
+    if (conversationId) {
+      setMessages([])
+      setConversationId(null)
+      setComparison(null)
+    }
   }
 
   const renderComparisonPanel = () => {
@@ -308,7 +320,12 @@ export function ChatPage() {
               key={conv.id}
               conversation={conv}
               isActive={conv.id === conversationId}
-              onClick={() => setConversationId(conv.id)}
+              onClick={() => {
+                // Sync the domain toggle to the selected conversation so the
+                // request domain matches the conversation being opened.
+                setDomain(conv.domain)
+                setConversationId(conv.id)
+              }}
             />
           ))}
         </ScrollArea>
@@ -319,7 +336,7 @@ export function ChatPage() {
           <PageHeader title="Ask AI" description="Multi-domain advisory assistant" className="!flex-row !gap-2" />
 
           <div className="flex items-center gap-4 flex-wrap">
-            <Tabs value={domain} onValueChange={setDomain}>
+<Tabs value={domain} onValueChange={handleDomainChange}>
               <TabsList className="h-8">
                 <TabsTrigger value="auto" className="text-xs px-2">Auto</TabsTrigger>
                 <TabsTrigger value="career" className="text-xs px-2">Career</TabsTrigger>

@@ -20,6 +20,7 @@ import re
 from typing import Any
 
 from core.llm_client import call_llm
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 from tools.calculators import calculate_debt_ratio, calculate_savings
 from tools.finance_tools import (
     budget_planner,
@@ -981,6 +982,21 @@ def run(request: Any) -> dict[str, Any]:
     """
     query = getattr(request, "query", "")
 
+    # ── Strict domain boundary (agent-level safety net) ──────
+    # Zero-cost keyword guard. If the query clearly belongs to another
+    # domain (e.g. a health symptom in the finance advisor), refuse and
+    # redirect instead of mixing advice.
+    if getattr(request, "domain", "auto") != "auto":
+        boundary = check_domain_boundary(query, "finance", use_llm=False)
+        if not boundary["within_scope"]:
+            return build_domain_mismatch_response(
+                active_domain="finance",
+                redirect_domain=boundary["redirect_domain"],
+                query=query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
+
     # 1. Always load latest profile
     user_id = getattr(request, "user_id", None)
     _load_profile_from_db(user_id, request)
@@ -1044,7 +1060,7 @@ def run(request: Any) -> dict[str, Any]:
 
     confidence_label, confidence_score = _confidence_level(profile, [], tool_outputs)
 
-    # 7. Build deterministic response (primary output — all math from tools)
+# 7. Build deterministic response (primary output — all math from tools)
     deterministic_text = _build_deterministic_response(
         profile, [], active_tools, tool_outputs, confidence_label,
     )
@@ -1057,6 +1073,34 @@ def run(request: Any) -> dict[str, Any]:
         or "Based on your profile values and calculator tool outputs."
     )
     confidence = confidence_score
+
+    # 7b. Use the LLM formatter to produce a conversational, non-technical
+    # response. The deterministic text (with raw calculation steps) is used
+    # only as a safety fallback if the LLM output is missing required
+    # sections or numeric grounding — never shown verbatim to the user.
+    try:
+        formatted = _format_with_llm(
+            deterministic_text,
+            profile,
+            tool_outputs,
+            active_tools,
+            rag_context,
+        )
+        candidate = (formatted or {}).get("recommendation", "")
+        if candidate:
+            grounded = _validate_grounded_response(candidate, deterministic_text)
+            if grounded != deterministic_text:
+                recommendation = grounded
+                if formatted.get("reason"):
+                    reason = formatted["reason"]
+                try:
+                    conf = float(formatted.get("confidence", confidence))
+                    if 0.0 <= conf <= 1.0:
+                        confidence = conf
+                except (TypeError, ValueError):
+                    pass
+    except Exception as exc:
+        logger.warning("[Finance] LLM formatting failed, using deterministic: %s", exc)
 
     logger.info("[Finance] final prompt (deterministic):\n%s", deterministic_text[:3000])
 

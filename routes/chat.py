@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.security import get_current_user
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 from models.user import User
 from schemas.chat import ChatRequest, ChatResponse, ConversationOut, ConversationSummary
 from services.conversation_service import (
@@ -43,6 +44,38 @@ async def chat(
     domain = request.domain
     if domain == "auto":
         domain = detect_domain(request.query)
+
+    # 1b. Strict domain boundary enforcement (explicit domain only)
+    # If the user explicitly selected a domain but the query clearly belongs
+    # to another domain, refuse to answer and redirect instead.
+    if request.domain != "auto" and request.domain != "general":
+        boundary = check_domain_boundary(request.query, request.domain, use_llm=True)
+        if not boundary["within_scope"]:
+            mismatch = build_domain_mismatch_response(
+                active_domain=request.domain,
+                redirect_domain=boundary["redirect_domain"],
+                query=request.query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
+            return ChatResponse(
+                conversation_id=request.conversation_id or "",
+                domain=domain,
+                answer=mismatch["recommendation"],
+                reason=mismatch["reason"],
+                confidence=mismatch["confidence"],
+                confidence_level=mismatch["confidence_level"],
+                memory_saved=[],
+                sources=[],
+                tools_used=[],
+                explainability={
+                    "status":            "domain_mismatch",
+                    "redirect_domain":   boundary["redirect_domain"],
+                    "boundary_reason":   boundary["reason"],
+                    "within_scope":      False,
+                },
+                messages=[],
+            )
 
     # 2. Resolve/create conversation
     if request.conversation_id:

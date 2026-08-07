@@ -309,11 +309,17 @@ def run_domain_agent(
         domain,
     )
 
-    retrieved_chunks = retrieve(
-        query=query,
-        domain=domain,
-        top_k=3,
-    )
+    # RAG is optional — never crash chat when faiss/numpy/sentence-transformers
+    # are missing or the index isn't built; degrade gracefully without it.
+    retrieved_chunks = []
+    try:
+        retrieved_chunks = retrieve(
+            query=query,
+            domain=domain,
+            top_k=3,
+        )
+    except Exception as exc:
+        print(f"[RAG] Retrieval unavailable, continuing without RAG context: {exc}")
 
     rag_context = ""
 

@@ -40,7 +40,11 @@ DOMAIN_KEYWORDS = {
         "diet", "sick", "doctor", "sleep", "tired", "gym",
         "calories", "overweight", "fat", "muscle", "mental", "stress",
         "eat", "food", "nutrition", "lose weight", "gain weight",
-        "workout", "anxiety", "mood", "wellness"
+        "workout", "anxiety", "mood", "wellness",
+        "fever", "cough", "headache", "pain", "rash", "symptom",
+        "cold", "infection", "allergy", "migraine", "blood pressure",
+        "diabetes", "asthma", "stomach", "nausea", "dizzy", "cardio",
+        "yoga", "meditation", "hydrat", "vitamins"
     ],
     "finance": [
         "money", "saving", "invest", "debt", "loan", "budget",
@@ -110,6 +114,21 @@ def has_blocked_keyword(query: str, keyword: str) -> bool:
     return re.search(pattern, query) is not None
 
 
+def keyword_matches(query: str, keyword: str) -> bool:
+    """
+    Word-boundary-aware keyword match used for domain detection.
+    - multi-word keyword: plain substring match (allows 'data scientist')
+    - single word: whole-word regex match (prevents 'eat' matching 'create',
+      'pain' matching 'spain', 'role' matching 'scroll', etc.)
+    """
+    if not keyword:
+        return False
+    if " " in keyword:
+        return keyword in query
+    pattern = rf"\b{re.escape(keyword)}\b"
+    return re.search(pattern, query) is not None
+
+
 def check_safety(query: str) -> dict:
     """
     Checks query against blocked keywords and sensitive topics.
@@ -160,15 +179,15 @@ def check_relevance(query: str) -> dict:
     matched = []
 
     for domain, keywords in DOMAIN_KEYWORDS.items():
-        if any(kw in query_lower for kw in keywords):
+        if any(keyword_matches(query_lower, kw) for kw in keywords):
             matched.append(domain)
 
     # Extra career intent check for indirect phrasing
     has_career_intent = any(
-        phrase in query_lower for phrase in CAREER_INTENT_PHRASES
+        keyword_matches(query_lower, phrase) for phrase in CAREER_INTENT_PHRASES
     )
     has_career_role = any(
-        role in query_lower for role in CAREER_ROLE_KEYWORDS
+        keyword_matches(query_lower, role) for role in CAREER_ROLE_KEYWORDS
     )
     if not matched and has_career_intent and has_career_role:
         matched.append("career")
