@@ -1,4 +1,5 @@
 from core.llm_client import call_llm
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 from tools.calculators import (
     skill_gap_analyzer,
     job_search,
@@ -47,6 +48,21 @@ def run(request, constraints: str = "") -> dict:
     current_level    = getattr(request, 'current_level', 'beginner')
     timeline_months  = getattr(request, 'timeline_months', 6)
     resume_text      = getattr(request, 'resume_text', '')
+
+    # ── Strict domain boundary (agent-level safety net) ──────
+    # Zero-cost keyword guard. If the query clearly belongs to
+    # another domain, refuse to answer instead of mixing advice.
+    query = getattr(request, 'query', '')
+    if getattr(request, 'domain', 'auto') != 'auto':
+        boundary = check_domain_boundary(query, 'career', use_llm=False)
+        if not boundary["within_scope"]:
+            return build_domain_mismatch_response(
+                active_domain='career',
+                redirect_domain=boundary["redirect_domain"],
+                query=query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
 
     # ── Run all tools ─────────────────────────────────────────
     gap_data    = skill_gap_analyzer(current_skills, target_role)

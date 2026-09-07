@@ -15,6 +15,7 @@ import agents.health_agent as health
 import agents.finance_agent as finance
 from core.intent_detector import detect_intent
 from core.safety_layer import check_safety, check_relevance
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 from langchain_agents.meta_lc_agent import meta_lc_agent
 
 load_dotenv()
@@ -196,6 +197,29 @@ async def meta_agent(request: QueryRequest) -> dict:
             "reasoning":  "Manual domain selection"
         }
         domains = [request.domain]
+
+    # Step 3b — Strict domain boundary enforcement (explicit domain only)
+    # If the user explicitly selected a domain but the query clearly belongs
+    # to another domain, refuse to answer and redirect instead.
+    if request.domain != "auto":
+        boundary = check_domain_boundary(request.query, request.domain, use_llm=True)
+        if not boundary["within_scope"]:
+            mismatch = build_domain_mismatch_response(
+                active_domain=request.domain,
+                redirect_domain=boundary["redirect_domain"],
+                query=request.query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
+            return {
+                "status":            "domain_mismatch",
+                "reason":            boundary["reason"],
+                "message":           mismatch["recommendation"],
+                "domains_activated": [],
+                "responses":         [mismatch],
+                "redirect_domain":   boundary["redirect_domain"],
+                "intent":            intent,
+            }
 
     # Step 4 — Run agents in parallel ─────────────────────────
     responses = await run_agents_parallel(domains, request)

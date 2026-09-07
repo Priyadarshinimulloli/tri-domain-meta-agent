@@ -3,11 +3,11 @@ import { useForm, Controller } from 'react-hook-form'
 import { useQueryClient } from '@tanstack/react-query'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { Loader2, Save, User, Briefcase, Heart, DollarSign } from 'lucide-react'
+import { Loader2, Save, User, Briefcase, Heart, DollarSign, Upload, FileText } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 import { useLanguage } from '@/contexts/LanguageContext'
-import { authService, getErrorMessage, profileService } from '@/services'
+import { authService, getErrorMessage, memoryService, profileService } from '@/services'
 import { useProfile, queryKeys, invalidateProfileDependentQueries } from '@/hooks'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { Button } from '@/components/ui/button'
@@ -20,13 +20,23 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import type { FullProfile } from '@/types'
 
+const optionalNumber = (schema: z.ZodNumber) =>
+  z.preprocess((value) => {
+    if (value === '' || value === null || value === undefined) return undefined
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      return trimmed ? Number(trimmed) : undefined
+    }
+    return value
+  }, schema.optional())
+
 const profileSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   general: z.object({
-    age: z.coerce.number().min(1).max(120).optional(),
+    age: optionalNumber(z.number().min(1).max(120)),
     gender: z.string().optional(),
-    height_cm: z.coerce.number().min(50).max(300).optional(),
-    weight_kg: z.coerce.number().min(20).max(500).optional(),
+    height_cm: optionalNumber(z.number().min(50).max(300)),
+    weight_kg: optionalNumber(z.number().min(20).max(500)),
     location: z.string().optional(),
   }).optional(),
   career: z.object({
@@ -42,17 +52,17 @@ const profileSchema = z.object({
     medical_conditions: z.string().optional(),
     lifestyle: z.string().optional(),
     fitness_goal: z.string().optional(),
-    sleep_hours: z.coerce.number().optional(),
-    sleep_quality: z.coerce.number().optional(),
+    sleep_hours: optionalNumber(z.number().min(0)),
+    sleep_quality: optionalNumber(z.number().min(0).max(10)),
     diet_preference: z.string().optional(),
     workout: z.string().optional(),
     health_goals: z.string().optional(),
-    water_intake: z.coerce.number().optional(),
+    water_intake: optionalNumber(z.number().min(0)),
   }).optional(),
   finance: z.object({
-    monthly_income: z.coerce.number().optional(),
-    monthly_expenses: z.coerce.number().optional(),
-    savings_goal: z.coerce.number().optional(),
+    monthly_income: optionalNumber(z.number().min(0)),
+    monthly_expenses: optionalNumber(z.number().min(0)),
+    savings_goal: optionalNumber(z.number().min(0)),
     investments: z.string().optional(),
     risk_appetite: z.string().optional(),
     investment_experience: z.string().optional(),
@@ -164,8 +174,10 @@ export function ProfilePage() {
   const queryClient = useQueryClient()
   const { data: profile, isLoading, refetch } = useProfile()
 
-  const { register, control, handleSubmit, reset, formState: { isSubmitting } } = useForm<ProfileForm>({
+  const { register, control, handleSubmit, reset, setValue, setFocus, formState: { isSubmitting, errors } } = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
+    mode: 'onChange',
+    reValidateMode: 'onChange',
     defaultValues: {
       name: user?.name || '',
       general: {},
@@ -176,6 +188,9 @@ export function ProfilePage() {
   })
   const initializedRef = useRef(false)
   const [hasProfile, setHasProfile] = useState(false)
+  const [resumeFileName, setResumeFileName] = useState<string | null>(null)
+  const [resumeUploadMessage, setResumeUploadMessage] = useState<string | null>(null)
+  const [activeTab, setActiveTab] = useState<'general' | 'career' | 'health' | 'finance'>('general')
 
   const profileHasData = useMemo(() => {
     if (!profile) return false
@@ -237,6 +252,25 @@ export function ProfilePage() {
     }
   }
 
+  const onInvalid = (validationErrors: Record<string, unknown>) => {
+    const invalidFields = collectErrorLabels(validationErrors)
+    const firstInvalid = collectFirstErrorPath(validationErrors)
+
+    if (firstInvalid) {
+      const topLevelTab = firstInvalid.split('.')[0] as 'general' | 'career' | 'health' | 'finance'
+      if (topLevelTab && topLevelTab !== activeTab) {
+        setActiveTab(topLevelTab)
+      }
+      setFocus(firstInvalid as never)
+    }
+
+    toast.error(
+      invalidFields.length
+        ? `Please fix: ${invalidFields.join(', ')}`
+        : 'Please fix the highlighted fields before saving your profile.',
+    )
+  }
+
   const handleAvatarUpload = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0]
     if (!file) return
@@ -264,6 +298,66 @@ export function ProfilePage() {
       toast.success(t('avatarDeleted'))
     } catch (err) {
       toast.error(getErrorMessage(err))
+    }
+  }
+
+  const handleResumeUpload = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) return
+
+    setResumeFileName(file.name)
+    setResumeUploadMessage('Processing resume...')
+
+    try {
+      let resumeValue = `Uploaded resume: ${file.name}`
+      let memoryText = `Career resume uploaded: ${file.name}`
+
+      // Only try to extract text from text-based files, not binary files
+      const textFileExtensions = ['.txt', '.md', '.csv', '.log']
+      const isTextFile = textFileExtensions.some((ext) => file.name.toLowerCase().endsWith(ext))
+
+      if (isTextFile) {
+        try {
+          const text = await file.text()
+          if (text?.trim()) {
+            const preview = text.replace(/\s+/g, ' ').trim().slice(0, 1200)
+            resumeValue = preview.length > 1800 ? `${preview.slice(0, 1797)}...` : preview
+            memoryText = `Career resume uploaded: ${file.name}. Preview: ${preview}`
+          }
+        } catch (readErr) {
+          // File read failed; just use the filename
+          console.warn('Could not read file as text:', readErr)
+          resumeValue = `Uploaded resume: ${file.name}`
+        }
+      } else {
+        // For binary files (PDF, DOCX, etc.), store just the filename as reference
+        resumeValue = `Uploaded resume: ${file.name}`
+      }
+
+      // Save resume to form state first (critical step)
+      setValue('career.resume', resumeValue)
+
+      // Try to save to memory, but don't fail if it doesn't work
+      try {
+        await memoryService.create({
+          memory_text: memoryText,
+          category: 'career',
+          importance_score: 0.95,
+        })
+        setResumeUploadMessage(`Resume uploaded and saved to your memories as ${file.name}`)
+        toast.success('Resume uploaded and saved to your memories')
+      } catch (memoryErr) {
+        // Memory save failed, but resume is still saved in the form
+        console.error('Memory save error:', memoryErr)
+        setResumeUploadMessage(`Resume uploaded as ${file.name} (memory save failed, but will be saved with profile)`)
+        toast.warning('Resume uploaded, but memory save failed. It will be saved when you click Save Changes.')
+      }
+    } catch (err) {
+      console.error('Resume upload error:', err)
+      setResumeUploadMessage('Unable to process resume file.')
+      toast.error(getErrorMessage(err))
+    } finally {
+      event.target.value = ''
     }
   }
 
@@ -330,8 +424,8 @@ export function ProfilePage() {
         </div>
       ) : null}
 
-      <form id="profileForm" onSubmit={handleSubmit(onSubmit)}>
-        <Tabs defaultValue="general" onValueChange={() => setSaveMessage(null)}>
+      <form id="profileForm" onSubmit={handleSubmit(onSubmit, onInvalid)}>
+        <Tabs value={activeTab} onValueChange={(value) => { setActiveTab(value as 'general' | 'career' | 'health' | 'finance'); setSaveMessage(null) }}>
           <TabsList className="mb-6">
             <TabsTrigger value="general">Personal</TabsTrigger>
             <TabsTrigger value="career">Career</TabsTrigger>
@@ -446,7 +540,31 @@ export function ProfilePage() {
                 </div>
                 <div className="space-y-2 sm:col-span-2">
                   <Label>Resume</Label>
-                  <Textarea {...register('career.resume')} placeholder="Paste resume summary or profile description" />
+                  <div className="rounded-lg border border-dashed border-input p-4">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <p className="text-sm font-medium">Upload your resume PDF or text file</p>
+                        <p className="text-sm text-muted-foreground">
+                          Your uploaded resume will be saved as a career memory for the dashboard and future conversations.
+                        </p>
+                      </div>
+                      <label className="inline-flex cursor-pointer items-center gap-2 rounded-md border border-input bg-background px-3 py-2 text-sm font-medium transition hover:bg-muted">
+                        <Upload className="h-4 w-4" />
+                        Upload Resume
+                        <input type="file" accept=".pdf,.txt,.md,.doc,.docx" className="sr-only" onChange={handleResumeUpload} />
+                      </label>
+                    </div>
+                    {resumeFileName ? (
+                      <div className="mt-3 flex items-center gap-2 rounded-md bg-muted/50 px-3 py-2 text-sm">
+                        <FileText className="h-4 w-4 text-primary" />
+                        <span>{resumeFileName}</span>
+                      </div>
+                    ) : null}
+                    {resumeUploadMessage ? (
+                      <p className="mt-3 text-sm text-muted-foreground">{resumeUploadMessage}</p>
+                    ) : null}
+                  </div>
+                  <input type="hidden" {...register('career.resume')} />
                 </div>
               </CardContent>
             </Card>
@@ -484,6 +602,10 @@ export function ProfilePage() {
                       </Select>
                     )}
                   />
+                </div>
+                <div className="space-y-2">
+                  <Label>Fitness Goal</Label>
+                  <Input {...register('health.fitness_goal')} placeholder="e.g. lose weight, build stamina" />
                 </div>
                 <div className="space-y-2">
                   <Label>Sleep Hours</Label>
@@ -624,4 +746,34 @@ export function ProfilePage() {
       </form>
     </div>
   )
+}
+
+function collectFirstErrorPath(errors: Record<string, unknown>, prefix = ''): string | null {
+  for (const [key, value] of Object.entries(errors)) {
+    const path = prefix ? `${prefix}.${key}` : key
+    if (value && typeof value === 'object' && 'message' in value) return path
+    if (value && typeof value === 'object') {
+      const nested = collectFirstErrorPath(value as Record<string, unknown>, path)
+      if (nested) return nested
+    }
+  }
+  return null
+}
+
+function collectErrorLabels(errors: Record<string, unknown>): string[] {
+  const labels: string[] = []
+
+  const visit = (node: Record<string, unknown>, prefix = '') => {
+    for (const [key, value] of Object.entries(node)) {
+      const path = prefix ? `${prefix}.${key}` : key
+      if (value && typeof value === 'object' && 'message' in value) {
+        labels.push(path.split('.').slice(-1)[0].replace(/_/g, ' '))
+      } else if (value && typeof value === 'object') {
+        visit(value as Record<string, unknown>, path)
+      }
+    }
+  }
+
+  visit(errors)
+  return labels
 }

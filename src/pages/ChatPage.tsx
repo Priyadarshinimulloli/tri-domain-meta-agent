@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useMemo, useState, useRef, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { Send, Plus, Sparkles, Zap, GitCompare } from 'lucide-react'
@@ -37,6 +37,38 @@ export function ChatPage() {
   const location = useLocation()
   const scrollRef = useRef<HTMLDivElement>(null)
 
+  const { data: profile } = useProfile()
+  const suggestedPrompts = useMemo(() => {
+    const prompts = [] as Array<{ domain: string; text: string }>
+
+    if (profile?.career?.target_role) {
+      prompts.push({
+        domain: 'career',
+        text: `What should I do next to become a ${profile.career.target_role}?`,
+      })
+    }
+
+    if (profile?.health?.fitness_goal) {
+      prompts.push({
+        domain: 'health',
+        text: `How can I improve my ${profile.health.fitness_goal} plan?`,
+      })
+    }
+
+    if (profile?.finance?.monthly_income || profile?.finance?.monthly_expenses) {
+      prompts.push({
+        domain: 'finance',
+        text: 'Help me optimize my budget and savings based on my current finances.',
+      })
+    }
+
+    if (prompts.length === 0) {
+      return SUGGESTED_PROMPTS.slice(0, 4)
+    }
+
+    return [...prompts, ...SUGGESTED_PROMPTS].slice(0, 4)
+  }, [profile])
+
   const [messages, setMessages] = useState<LocalMessage[]>([])
   const [input, setInput] = useState('')
   const [domain, setDomain] = useState<string>('auto')
@@ -49,7 +81,6 @@ export function ChatPage() {
     langchain?: QueryResponse & { executionTime: number }
   } | null>(null)
 
-  const { data: profile } = useProfile()
   const { data: history } = useChatHistory()
   const { data: conversation } = useConversation(conversationId)
   const sendChat = useSendChat()
@@ -179,19 +210,34 @@ export function ChatPage() {
         })
         if (!conversationId) setConversationId(res.conversation_id)
 
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: crypto.randomUUID(),
-            role: 'assistant',
-            content: res.answer,
-            timestamp: new Date().toISOString(),
-            domain: res.domain,
-            confidence: res.confidence,
-            reason: res.reason,
-            sources: res.sources,
-          },
-        ])
+        if (res.messages?.length) {
+          setMessages(
+            res.messages.map((m) => ({
+              id: m.id,
+              role: m.role as 'user' | 'assistant',
+              content: m.content,
+              timestamp: m.timestamp,
+              domain: m.role === 'assistant' ? res.domain : undefined,
+              confidence: m.role === 'assistant' ? res.confidence : undefined,
+              reason: m.role === 'assistant' ? res.reason : undefined,
+              sources: m.role === 'assistant' ? res.sources : undefined,
+            }))
+          )
+        } else {
+          setMessages((prev) => [
+            ...prev,
+            {
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: res.answer,
+              timestamp: new Date().toISOString(),
+              domain: res.domain,
+              confidence: res.confidence,
+              reason: res.reason,
+              sources: res.sources,
+            },
+          ])
+        }
       }
     } catch (err) {
       toast.error(getErrorMessage(err))
@@ -209,10 +255,22 @@ export function ChatPage() {
     }
   }
 
-  const handleNewChat = () => {
+const handleNewChat = () => {
     setMessages([])
     setConversationId(null)
     setComparison(null)
+  }
+
+  // Switching the domain must start a fresh conversation so the new domain's
+  // answers are stored/labeled correctly instead of being reattached to the
+  // previous (e.g. health) conversation.
+  const handleDomainChange = (value: string) => {
+    setDomain(value)
+    if (conversationId) {
+      setMessages([])
+      setConversationId(null)
+      setComparison(null)
+    }
   }
 
   const renderComparisonPanel = () => {
@@ -262,7 +320,12 @@ export function ChatPage() {
               key={conv.id}
               conversation={conv}
               isActive={conv.id === conversationId}
-              onClick={() => setConversationId(conv.id)}
+              onClick={() => {
+                // Sync the domain toggle to the selected conversation so the
+                // request domain matches the conversation being opened.
+                setDomain(conv.domain)
+                setConversationId(conv.id)
+              }}
             />
           ))}
         </ScrollArea>
@@ -273,7 +336,7 @@ export function ChatPage() {
           <PageHeader title="Ask AI" description="Multi-domain advisory assistant" className="!flex-row !gap-2" />
 
           <div className="flex items-center gap-4 flex-wrap">
-            <Tabs value={domain} onValueChange={setDomain}>
+<Tabs value={domain} onValueChange={handleDomainChange}>
               <TabsList className="h-8">
                 <TabsTrigger value="auto" className="text-xs px-2">Auto</TabsTrigger>
                 <TabsTrigger value="career" className="text-xs px-2">Career</TabsTrigger>
@@ -319,7 +382,7 @@ export function ChatPage() {
                   Ask about career growth, health goals, or financial planning
                 </p>
                 <div className="grid gap-2 sm:grid-cols-2">
-                  {SUGGESTED_PROMPTS.slice(0, 4).map((prompt) => (
+                  {suggestedPrompts.map((prompt) => (
                     <Button
                       key={prompt.text}
                       variant="outline"

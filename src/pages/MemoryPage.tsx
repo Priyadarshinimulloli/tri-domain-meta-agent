@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { motion } from 'framer-motion'
 import { Brain, Loader2, Plus, Search } from 'lucide-react'
 import { toast } from 'sonner'
-import { useMemories, useCreateMemory } from '@/hooks'
+import { useMemories, useCreateMemory, useProfile } from '@/hooks'
 import { PageHeader } from '@/components/layout/PageHeader'
 import { MemoryCard } from '@/components/common/MemoryCard'
 import { Button } from '@/components/ui/button'
@@ -41,6 +41,8 @@ export function MemoryPage() {
   const [dialogOpen, setDialogOpen] = useState(false)
   const [localMemories, setLocalMemories] = useState<Memory[]>([])
   const debouncedSearch = useDebounce(search, 300)
+
+  const { data: profile, isLoading: isProfileLoading } = useProfile()
 
   const { data: apiMemories, isLoading } = useMemories(categoryFilter === 'all' ? undefined : categoryFilter)
   const createMemory = useCreateMemory()
@@ -86,6 +88,14 @@ export function MemoryPage() {
 
   return (
     <div className="space-y-8">
+      {!isProfileLoading && !profile ? (
+        <Card>
+          <CardContent className="p-6">
+            <h3 className="font-semibold">Complete your profile</h3>
+            <p className="text-sm text-muted-foreground">Adding basic profile details enables more relevant memory suggestions and better retrieval.</p>
+          </CardContent>
+        </Card>
+      ) : null}
       <PageHeader
         title="Memory"
         description="AI-retained context and insights across sessions"

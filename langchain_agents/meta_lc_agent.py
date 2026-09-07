@@ -11,6 +11,7 @@ from langchain_agents.health_lc_agent import run as health_run
 from langchain_agents.finance_lc_agent import run as finance_run
 from core.intent_detector import detect_intent
 from core.safety_layer import check_safety, check_relevance
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
@@ -57,6 +58,28 @@ async def meta_lc_agent(request) -> dict:
             "reasoning":  "Manual domain selection"
         }
         domains = [request.domain]
+
+    # Strict domain boundary enforcement (explicit domain only)
+    if request.domain != "auto":
+        boundary = check_domain_boundary(request.query, request.domain, use_llm=True)
+        if not boundary["within_scope"]:
+            mismatch = build_domain_mismatch_response(
+                active_domain=request.domain,
+                redirect_domain=boundary["redirect_domain"],
+                query=request.query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
+            return {
+                "status":            "domain_mismatch",
+                "reason":            boundary["reason"],
+                "message":           mismatch["recommendation"],
+                "domains_activated": [],
+                "responses":         [mismatch],
+                "redirect_domain":   boundary["redirect_domain"],
+                "intent":            intent,
+                "agent_framework":   "langchain",
+            }
 
     # Route to LangChain agents
     agent_map = {

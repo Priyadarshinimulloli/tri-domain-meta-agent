@@ -1,4 +1,5 @@
 from core.llm_client import call_llm
+from core.domain_boundary import check_domain_boundary, build_domain_mismatch_response
 from tools.calculators import (
     calculate_bmi,
     fitness_score,
@@ -41,6 +42,21 @@ CRITICAL: Respond ONLY with valid JSON in exactly this format:
 
 
 def run(request) -> dict:
+
+    # ── Strict domain boundary (agent-level safety net) ──────
+    # Zero-cost keyword guard. If the query clearly belongs to
+    # another domain, refuse to answer instead of mixing advice.
+    query = getattr(request, 'query', '')
+    if getattr(request, 'domain', 'auto') != 'auto':
+        boundary = check_domain_boundary(query, 'health', use_llm=False)
+        if not boundary["within_scope"]:
+            return build_domain_mismatch_response(
+                active_domain='health',
+                redirect_domain=boundary["redirect_domain"],
+                query=query,
+                reason=boundary["reason"],
+                confidence=boundary["confidence"],
+            )
 
     # ── Core tools — always run ───────────────────────────────
     bmi_data     = calculate_bmi(request.weight_kg, request.height_cm)
